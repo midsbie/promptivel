@@ -1,6 +1,7 @@
 #+TITLE: promptivel
-#+AUTHOR: Miguel Guedes
-#+EMAIL: miguel@softgeist.com
+#+AUTHOR: Miguel Guedes <miguel@softgeist.com>
+#+DATE: 17/09/2025
+#+OPTIONS: toc:2 num:nil ^:nil
 
 * Overview
 promptivel is a minimal Emacs client for sending buffer/region snippets to promptivd. It provides a simple interface for integrating Emacs with text snippet relay services like promptive.
