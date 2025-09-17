@@ -82,6 +82,13 @@ One of `top', `bottom', or `cursor'."
                  (const :tag "Bottom" bottom)
                  (const :tag "Cursor" cursor)))
 
+(defcustom promptivel-default-session-policy 'reuse_or_create
+  "Default session policy advertised to the sink.
+One of `reuse_or_create', `reuse_only', or `start_fresh'."
+  :type '(choice (const :tag "Reuse Or Create" reuse_or_create)
+                 (const :tag "Reuse Only" reuse_only)
+                 (const :tag "Start Fresh" start_fresh)))
+
 (defcustom promptivel-selected-provider nil
   "Selected provider for targeting specific sinks.
 When nil, user will be prompted to select from available providers."
@@ -95,6 +102,9 @@ When nil, user will be prompted to select from available providers."
 (defvar-local promptivel-placement promptivel-default-placement
   "Current placement selection for this buffer.")
 
+(defvar-local promptivel-session-policy promptivel-default-session-policy
+  "Current session policy for this buffer.")
+
 (defvar promptivel--available-providers nil
   "Cached list of providers from last successful /v1/providers request.")
 
@@ -104,6 +114,7 @@ When nil, user will be prompted to select from available providers."
 (defvar promptivel-prefix-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "l") #'promptivel-select-placement)
+    (define-key map (kbd "s") #'promptivel-select-session-policy)
     (define-key map (kbd "p") #'promptivel-select-provider)
     (define-key map (kbd "i") #'promptivel-insert)
     map)
@@ -121,6 +132,7 @@ When nil, user will be prompted to select from available providers."
 
 Bindings (global when mode is enabled):
   C-c t l  Select insertion placement
+  C-c t s  Select session policy
   C-c t p  Select provider
   C-c t i  Send region or buffer to promptivd"
   :init-value nil
@@ -145,6 +157,23 @@ PLACEMENT is one of the symbols `top', `bottom', or `cursor'."
   (message "promptivel placement: %s" placement))
 
 ;;;###autoload
+(defun promptivel-select-session-policy (policy)
+  "Set `promptivel-session-policy' interactively to POLICY.
+
+POLICY is one of the symbols `reuse_or_create', `reuse_only',
+or `start_fresh'."
+  (interactive
+   (list (pcase (completing-read
+                 "Session policy: "
+                 '("Reuse or create" "Reuse only" "Start fresh") nil t
+                 (symbol-name promptivel-session-policy))
+           ("Reuse only" 'reuse_only)
+           ("Start fresh" 'start_fresh)
+           (_ 'reuse_or_create))))
+  (setq-local promptivel-session-policy policy)
+  (message "promptivel session policy: %s" policy))
+
+;;;###autoload
 (defun promptivel-select-provider (provider)
   "Set `promptivel-selected-provider' interactively to PROVIDER.
 
@@ -159,7 +188,7 @@ PROVIDER is a string matching one of the available providers from the sink."
 
 ;;;###autoload
 (defun promptivel-insert (&optional beg end)
-  "Send region or buffer to promptivd with selected placement.
+  "Send region or buffer to promptivd.
 
 When region is active, send text between BEG and END; otherwise send the entire buffer.
 Respects user options including fencing, path line, server URL, and timeout."
@@ -176,7 +205,7 @@ Respects user options including fencing, path line, server URL, and timeout."
                      (user-error "Empty snippet")))
            (snippet (promptivel--format-snippet text))
            (url (promptivel--build-url "/v1/insert"))
-           (payload (promptivel--build-payload snippet promptivel-placement))
+           (payload (promptivel--build-payload snippet promptivel-placement promptivel-session-policy))
            (resp (promptivel--http-post-json url payload)))
       (pcase resp
         (`(,code . ,body-str)
@@ -202,11 +231,23 @@ Respects user options including fencing, path line, server URL, and timeout."
         (format "In %s:\n%s" loc fenced)
       fenced)))
 
-(defun promptivel--build-payload (snippet placement)
+(defun promptivel--placement-type-string (placement)
+  "Return PLACEMENT as a JSON-ready string or nil."
+  (pcase placement
+    ('top "top")
+    ('bottom "bottom")
+    (_ "cursor")))
+
+(defun promptivel--session-policy-string (policy)
+  "Return POLICY as a JSON-ready string or nil."
+  (pcase policy
+    ('reuse_only "reuse_only")
+    ('start_fresh "start_fresh")
+    (_ "reuse_or_create")))
+
+(defun promptivel--build-payload (snippet placement session-policy)
   "Build JSON-ready payload with SNIPPET and PLACEMENT symbol."
-  (let* ((placement-type (pcase placement
-                           ('top "top") ('bottom "bottom") (_ "cursor")))
-         (provider (promptivel--ensure-provider))
+  (let* ((provider (promptivel--ensure-provider))
          (src (let ((h (make-hash-table :test 'equal)))
                 (puthash "client" "promptivel" h)
                 (puthash "label" "Emacs client" h)
@@ -219,15 +260,17 @@ Respects user options including fencing, path line, server URL, and timeout."
     (puthash "text" snippet payload)
     (puthash "metadata" nil payload)
     (puthash "placement"
-             (let ((ph (make-hash-table :test 'equal)))
+             (let ((ph (make-hash-table :test 'equal))
+                   (placement-type (promptivel--placement-type-string placement)))
                (puthash "type" placement-type ph)
                ph)
              payload)
-    (when provider
+    (when (or provider session-policy)
       (puthash "target"
-               (let ((th (make-hash-table :test 'equal)))
+               (let ((th (make-hash-table :test 'equal))
+                     (policy (promptivel--session-policy-string session-policy)))
                  (puthash "provider" provider th)
-                 (puthash "session_policy" "reuse_or_create" th)
+                 (puthash "session_policy" policy th)
                  th)
                payload))
     payload))
@@ -284,7 +327,7 @@ Returns cached list if recent, otherwise fetches fresh data."
     (when (or (null promptivel--providers-cache-time)
               (> (- now promptivel--providers-cache-time) promptivel-providers-cache-seconds))
       (condition-case err
-          (let ((resp (promptivel--http-get-json (concat promptivel-server-url "/v1/providers"))))
+          (let ((resp (promptivel--http-get-json (promptivel--build-url "/v1/providers"))))
             (pcase resp
               (`(,code . ,body-str)
                (if (and (integerp code) (<= 200 code) (< code 300))
