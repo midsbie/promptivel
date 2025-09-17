@@ -85,9 +85,9 @@ One of `top', `bottom', or `cursor'."
 (defcustom promptivel-default-session-policy 'reuse_or_create
   "Default session policy advertised to the sink.
 One of `reuse_or_create', `reuse_only', or `start_fresh'."
-  :type '(choice (const :tag "Reuse Or Create" reuse_or_create)
-                 (const :tag "Reuse Only" reuse_only)
-                 (const :tag "Start Fresh" start_fresh)))
+  :type '(choice (const :tag "Reuse or create" reuse_or_create)
+                 (const :tag "Reuse only" reuse_only)
+                 (const :tag "Start fresh" start_fresh)))
 
 (defcustom promptivel-selected-provider nil
   "Selected provider for targeting specific sinks.
@@ -203,9 +203,10 @@ Respects user options including fencing, path line, server URL, and timeout."
     (let* ((text (if promptivel-trim-whitespace-p (string-trim raw) raw))
            (_check (when (string-empty-p text)
                      (user-error "Empty snippet")))
+           (_provider (promptivel--ensure-provider))
            (snippet (promptivel--format-snippet text))
            (url (promptivel--build-url "/v1/insert"))
-           (payload (promptivel--build-payload snippet promptivel-placement promptivel-session-policy))
+           (payload (promptivel--build-payload snippet))
            (resp (promptivel--http-post-json url payload)))
       (pcase resp
         (`(,code . ,body-str)
@@ -236,6 +237,7 @@ Respects user options including fencing, path line, server URL, and timeout."
   (pcase placement
     ('top "top")
     ('bottom "bottom")
+    ;; Deliberately not handling invalid values
     (_ "cursor")))
 
 (defun promptivel--session-policy-string (policy)
@@ -243,12 +245,12 @@ Respects user options including fencing, path line, server URL, and timeout."
   (pcase policy
     ('reuse_only "reuse_only")
     ('start_fresh "start_fresh")
-    (_ "reuse_or_create")))
+    ('reuse_or_create "reuse_or_create")
+    (_ (error "promptivel: invalid session policy: %S" policy))))
 
-(defun promptivel--build-payload (snippet placement session-policy)
-  "Build JSON-ready payload with SNIPPET and PLACEMENT symbol."
-  (let* ((provider (promptivel--ensure-provider))
-         (src (let ((h (make-hash-table :test 'equal)))
+(defun promptivel--build-payload (snippet)
+  "Build JSON-ready payload with SNIPPET."
+  (let* ((src (let ((h (make-hash-table :test 'equal)))
                 (puthash "client" "promptivel" h)
                 (puthash "label" "Emacs client" h)
                 (when buffer-file-name
@@ -261,18 +263,20 @@ Respects user options including fencing, path line, server URL, and timeout."
     (puthash "metadata" nil payload)
     (puthash "placement"
              (let ((ph (make-hash-table :test 'equal))
-                   (placement-type (promptivel--placement-type-string placement)))
+                   (placement-type (promptivel--placement-type-string promptivel-placement)))
                (puthash "type" placement-type ph)
                ph)
              payload)
-    (when (or provider session-policy)
-      (puthash "target"
-               (let ((th (make-hash-table :test 'equal))
-                     (policy (promptivel--session-policy-string session-policy)))
-                 (puthash "provider" provider th)
-                 (puthash "session_policy" policy th)
-                 th)
-               payload))
+    (let* ((policy-str (promptivel--session-policy-string promptivel-session-policy))
+           (nondefault-policy (not (string= policy-str "reuse_or_create")))
+           (need-target (or promptivel-selected-provider nondefault-policy)))
+      (when need-target
+        (let ((th (make-hash-table :test 'equal)))
+          (when promptivel-selected-provider
+            (puthash "provider" promptivel-selected-provider th))
+          (when nondefault-policy
+            (puthash "session_policy" policy-str th))
+          (puthash "target" th payload))))
     payload))
 
 (defun promptivel--build-url (&rest paths)
