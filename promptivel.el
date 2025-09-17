@@ -82,13 +82,30 @@ One of `top', `bottom', or `cursor'."
                  (const :tag "Bottom" bottom)
                  (const :tag "Cursor" cursor)))
 
+(defcustom promptivel-selected-provider nil
+  "Selected provider for targeting specific sinks.
+When nil, user will be prompted to select from available providers."
+  :type '(choice (const :tag "None selected" nil)
+                 (string :tag "Provider name")))
+
+(defcustom promptivel-providers-cache-seconds 30
+  "How long to cache provider list before refetching."
+  :type 'integer)
+
 (defvar-local promptivel-placement promptivel-default-placement
   "Current placement selection for this buffer.")
 
+(defvar promptivel--available-providers nil
+  "Cached list of providers from last successful /v1/providers request.")
+
+(defvar promptivel--providers-cache-time nil
+  "Timestamp of last successful providers fetch.")
+
 (defvar promptivel-prefix-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "i") #'promptivel-select-placement)
-    (define-key map (kbd "t") #'promptivel-insert)
+    (define-key map (kbd "l") #'promptivel-select-placement)
+    (define-key map (kbd "p") #'promptivel-select-provider)
+    (define-key map (kbd "i") #'promptivel-insert)
     map)
   "Prefix keymap for Promptivel commands.")
 
@@ -103,8 +120,9 @@ One of `top', `bottom', or `cursor'."
   "Global minor mode for sending buffer/region to promptivd.
 
 Bindings (global when mode is enabled):
-  C-c t i  Select insertion placement
-  C-c t t  Send region or buffer to promptivd"
+  C-c t l  Select insertion placement
+  C-c t p  Select provider
+  C-c t i  Send region or buffer to promptivd"
   :init-value nil
   :lighter " Promptivel"
   :keymap promptivel-mode-map
@@ -125,6 +143,19 @@ PLACEMENT is one of the symbols `top', `bottom', or `cursor'."
            (_ 'cursor))))
   (setq-local promptivel-placement placement)
   (message "promptivel placement: %s" placement))
+
+;;;###autoload
+(defun promptivel-select-provider (provider)
+  "Set `promptivel-selected-provider' interactively to PROVIDER.
+
+PROVIDER is a string matching one of the available providers from the sink."
+  (interactive
+   (list (let ((providers (promptivel--get-providers)))
+           (if providers
+               (completing-read "Provider: " providers nil t promptivel-selected-provider)
+             (user-error "No providers available - is the sink connected?")))))
+  (setq promptivel-selected-provider provider)
+  (message "promptivel provider: %s" provider))
 
 ;;;###autoload
 (defun promptivel-insert (&optional beg end)
@@ -175,6 +206,7 @@ Respects user options including fencing, path line, server URL, and timeout."
   "Build JSON-ready payload with SNIPPET and PLACEMENT symbol."
   (let* ((placement-type (pcase placement
                            ('top "top") ('bottom "bottom") (_ "cursor")))
+         (provider (promptivel--ensure-provider))
          (src (let ((h (make-hash-table :test 'equal)))
                 (puthash "client" "promptivel" h)
                 (puthash "label" "Emacs client" h)
@@ -191,6 +223,13 @@ Respects user options including fencing, path line, server URL, and timeout."
                (puthash "type" placement-type ph)
                ph)
              payload)
+    (when provider
+      (puthash "target"
+               (let ((th (make-hash-table :test 'equal)))
+                 (puthash "provider" provider th)
+                 (puthash "session_policy" "reuse_or_create" th)
+                 th)
+               payload))
     payload))
 
 (defun promptivel--build-url (&rest paths)
@@ -211,6 +250,71 @@ Return cons cell (STATUS-CODE . BODY-STRING)."
           '(("Content-Type" . "application/json; charset=utf-8")
             ("Accept" . "application/json")))
          (url-request-data payload-utf8)
+         (buf (url-retrieve-synchronously url t t promptivel-timeout-seconds)))
+    (unless buf
+      (error "promptivel: no response from %s" url))
+    (unwind-protect
+        (with-current-buffer buf
+          (let* ((status
+                  (or (and (boundp 'url-http-response-status)
+                           url-http-response-status)
+                      (progn
+                        (goto-char (point-min))
+                        (when (re-search-forward "^HTTP/1\\.1 \\([0-9]+\\)" nil t)
+                          (string-to-number (match-string 1))))))
+                 (body-start
+                  (or (and (boundp 'url-http-end-of-headers)
+                           (integerp url-http-end-of-headers)
+                           (1+ url-http-end-of-headers))
+                      (progn
+                        (goto-char (point-min))
+                        (if (re-search-forward "\r?\n\r?\n" nil t)
+                            (point)
+                          (point-max)))))
+                 (body (buffer-substring-no-properties body-start (point-max))))
+            (unless (integerp status)
+              (error "promptivel: malformed HTTP response"))
+            (cons status body)))
+      (kill-buffer buf))))
+
+(defun promptivel--get-providers ()
+  "Fetch list of available providers from the daemon.
+Returns cached list if recent, otherwise fetches fresh data."
+  (let ((now (float-time)))
+    (when (or (null promptivel--providers-cache-time)
+              (> (- now promptivel--providers-cache-time) promptivel-providers-cache-seconds))
+      (condition-case err
+          (let ((resp (promptivel--http-get-json (concat promptivel-server-url "/v1/providers"))))
+            (pcase resp
+              (`(,code . ,body-str)
+               (if (and (integerp code) (<= 200 code) (< code 300))
+                   (let* ((parsed (json-parse-string body-str :object-type 'hash-table))
+                          (providers (gethash "providers" parsed)))
+                     (setq promptivel--available-providers (append providers nil))
+                     (setq promptivel--providers-cache-time now))
+                 (message "promptivel: failed to fetch providers: HTTP %s" code)))))
+        (error
+         (message "promptivel: error fetching providers: %s" (error-message-string err)))))
+    promptivel--available-providers))
+
+(defun promptivel--ensure-provider ()
+  "Ensure a provider is selected, prompting user if necessary.
+Returns the selected provider string or nil if none available."
+  (cond
+   (promptivel-selected-provider promptivel-selected-provider)
+   (t
+    (let ((providers (promptivel--get-providers)))
+      (when providers
+        (let ((selected (completing-read "Select provider: " providers nil t)))
+          (setq promptivel-selected-provider selected)
+          selected))))))
+
+(defun promptivel--http-get-json (url)
+  "GET JSON from URL.
+Return cons cell (STATUS-CODE . BODY-STRING)."
+  (let* ((url-request-method "GET")
+         (url-request-extra-headers
+          '(("Accept" . "application/json")))
          (buf (url-retrieve-synchronously url t t promptivel-timeout-seconds)))
     (unless buf
       (error "promptivel: no response from %s" url))
