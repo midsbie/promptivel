@@ -44,7 +44,7 @@
   :group 'tools
   :prefix "promptivel-")
 
-(defcustom promptivel-server-url "http://127.0.0.1:8787/v1/insert"
+(defcustom promptivel-server-url "http://127.0.0.1:8787"
   "HTTP/1.1 endpoint for promptivd /v1/insert."
   :type 'string)
 
@@ -144,8 +144,9 @@ Respects user options including fencing, path line, server URL, and timeout."
            (_check (when (string-empty-p text)
                      (user-error "Empty snippet")))
            (snippet (promptivel--format-snippet text))
+           (url (promptivel--build-url "/v1/insert"))
            (payload (promptivel--build-payload snippet promptivel-placement))
-           (resp (promptivel--http-post-json promptivel-server-url payload)))
+           (resp (promptivel--http-post-json url payload)))
       (pcase resp
         (`(,code . ,body-str)
          (if (and (integerp code) (<= 200 code) (< code 300))
@@ -191,6 +192,13 @@ Respects user options including fencing, path line, server URL, and timeout."
                ph)
              payload)
     payload))
+
+(defun promptivel--build-url (&rest paths)
+  "Join `promptivel-server-url' URL with PATHS segments, ensuring single slashes."
+  (let ((url (replace-regexp-in-string "/+$" "" promptivel-server-url)))
+    (dolist (p paths)
+      (setq url (concat url "/" (replace-regexp-in-string "^/+" "" p))))
+    url))
 
 (defun promptivel--http-post-json (url data)
   "POST DATA as JSON to URL.
