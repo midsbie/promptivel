@@ -44,6 +44,11 @@
   :group 'tools
   :prefix "promptivel-")
 
+(defconst promptivel--session-policy-alist
+  '(("Reuse or create" . reuse_or_create)
+    ("Reuse only"      . reuse_only)
+    ("Start fresh"     . start_fresh)))
+
 (defcustom promptivel-server-url "http://127.0.0.1:8787"
   "HTTP/1.1 endpoint for promptivd /v1/insert."
   :type 'string)
@@ -158,18 +163,15 @@ PLACEMENT is one of the symbols `top', `bottom', or `cursor'."
 
 ;;;###autoload
 (defun promptivel-select-session-policy (policy)
-  "Set `promptivel-session-policy' interactively to POLICY.
-
-POLICY is one of the symbols `reuse_or_create', `reuse_only',
-or `start_fresh'."
+  "Set `promptivel-session-policy' interactively to POLICY."
   (interactive
-   (list (pcase (completing-read
-                 "Session policy: "
-                 '("Reuse or create" "Reuse only" "Start fresh") nil t
-                 (symbol-name promptivel-session-policy))
-           ("Reuse only" 'reuse_only)
-           ("Start fresh" 'start_fresh)
-           (_ 'reuse_or_create))))
+   (let* ((current-label (or (promptivel--policy->label promptivel-session-policy)
+                             "Reuse or create"))
+          (choice (completing-read
+                   "Session policy: "
+                   (mapcar #'car promptivel--session-policy-alist)
+                   nil t current-label)))
+     (list (promptivel--label->policy choice))))
   (setq-local promptivel-session-policy policy)
   (message "promptivel session policy: %s" policy))
 
@@ -247,6 +249,13 @@ Respects user options including fencing, path line, server URL, and timeout."
     ('start_fresh "start_fresh")
     ('reuse_or_create "reuse_or_create")
     (_ (error "promptivel: invalid session policy: %S" policy))))
+
+(defun promptivel--policy->label (sym)
+  (car (rassoc sym promptivel--session-policy-alist)))
+
+(defun promptivel--label->policy (label)
+  (or (cdr (assoc label promptivel--session-policy-alist))
+      (error "promptivel: unknown session policy label: %S" label)))
 
 (defun promptivel--build-payload (snippet)
   "Build JSON-ready payload with SNIPPET."
