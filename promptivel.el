@@ -132,7 +132,7 @@ When nil, user will be prompted to select from available providers."
   "Keymap for `promptivel-mode'.")
 
 ;;;###autoload
-(define-minor-mode promptivel-mode
+(define-minor-mode promptivel-global-mode
   "Global minor mode for sending buffer/region to promptivd.
 
 Bindings (global when mode is enabled):
