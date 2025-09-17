@@ -1,0 +1,56 @@
+#+TITLE: promptivel
+#+AUTHOR: Miguel Guedes
+#+EMAIL: miguel@softgeist.com
+
+* Overview
+promptivel is a minimal Emacs client for sending buffer/region snippets to promptivd. It provides a simple interface for integrating Emacs with text snippet relay services like promptive.
+
+** Features
+- Send entire buffer or selected region to promptivd
+- Configurable snippet formatting with fence delimiters
+- Multiple insertion placement options (top, bottom, cursor)
+- Session policy management (reuse or create, reuse only, start fresh)
+- Provider selection for targeting specific sinks
+- Automatic file path/buffer name inclusion
+
+** Key Bindings
+When ~promptivel-mode~ is enabled:
+
+- ~C-c t l~ - Select insertion placement
+- ~C-c t s~ - Select session policy
+- ~C-c t p~ - Select provider
+- ~C-c t i~ - Send region or buffer to promptivd
+
+** Requirements
+- Emacs 27.2 or later
+- Running promptivd server instance
+
+* Installation
+Add =promptivel.el= to your load path and require it:
+
+#+begin_src emacs-lisp
+(require 'promptivel)
+(promptivel-mode 1)
+#+end_src
+
+* Configuration
+Customize the following variables to suit your needs:
+
+- ~promptivel-server-url~ - HTTP endpoint for promptivd (default: "http://127.0.0.1:8787")
+- ~promptivel-timeout-seconds~ - Request timeout (default: 15)
+- ~promptivel-include-file-path-p~ - Include file path in snippets (default: t)
+- ~promptivel-fence-enabled-p~ - Wrap snippets in fence delimiters (default: t)
+- ~promptivel-default-placement~ - Default insertion placement (default: 'bottom)
+- ~promptivel-default-session-policy~ - Default session policy (default: 'reuse_or_create)
+
+* Ecosystem
+promptivel is a client for Emacs. It sends buffer/region snippets to promptivd, which forwards them to a connected sink such as the promptive Firefox extension.
+
+| Role   | Project    | What it does                                 |
+|--------+------------+----------------------------------------------|
+| Daemon | [[https://github.com/midsbie/promptivd][promptivd]]  | Relays insert jobs to a live sink            |
+| Sink   | [[https://github.com/midsbie/promptive][promptive]]  | Firefox extension acting as a WebSocket sink |
+| Client | [[https://github.com/midsbie/promptivel][promptivel]] | Emacs client that submits text to promptivd  |
+
+* License
+Distributed under the MIT License. See LICENSE for more information.
