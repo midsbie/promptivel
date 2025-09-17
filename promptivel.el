@@ -176,8 +176,8 @@ Respects user options including fencing, path line, server URL, and timeout."
   (let* ((placement-type (pcase placement
                            ('top "top") ('bottom "bottom") (_ "cursor")))
          (src (let ((h (make-hash-table :test 'equal)))
-                (puthash "client" "emacs" h)
-                (puthash "label" "Emacs" h)
+                (puthash "client" "promptivel" h)
+                (puthash "label" "Emacs client" h)
                 (when buffer-file-name
                   (puthash "path" buffer-file-name h))
                 h))
