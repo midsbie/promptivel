@@ -165,12 +165,10 @@ PLACEMENT is one of the symbols `top', `bottom', or `cursor'."
 (defun promptivel-select-session-policy (policy)
   "Set `promptivel-session-policy' interactively to POLICY."
   (interactive
-   (let* ((current-label (or (promptivel--policy->label promptivel-session-policy)
-                             "Reuse or create"))
-          (choice (completing-read
+   (let* ((choice (completing-read
                    "Session policy: "
                    (mapcar #'car promptivel--session-policy-alist)
-                   nil t current-label)))
+                   nil t nil)))
      (list (promptivel--label->policy choice))))
   (setq-local promptivel-session-policy policy)
   (message "promptivel session policy: %s" policy))
