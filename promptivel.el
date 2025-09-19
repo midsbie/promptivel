@@ -38,6 +38,7 @@
 (require 'json)
 (require 'url)
 (require 'subr-x)
+(require 'project)
 
 (defgroup promptivel nil
   "Client for promptivd relay."
@@ -59,8 +60,14 @@
 
 (defcustom promptivel-include-file-path-p t
   "When non-nil, prefix the snippet with a location line.
-If visiting a file, include the absolute file path.
-Otherwise, include the buffer name."
+If visiting a file, include the file path according to
+`promptivel-use-relative-path-p'.  Otherwise, include the buffer name."
+  :type 'boolean)
+
+(defcustom promptivel-use-relative-path-p t
+  "When non-nil, use relative file paths when file path is enabled.
+Relative paths are computed from the project root using `project.el'.
+If no project root can be determined, falls back to buffer name."
   :type 'boolean)
 
 (defcustom promptivel-fence-enabled-p t
@@ -190,8 +197,9 @@ PROVIDER is a string matching one of the available providers from the sink."
 (defun promptivel-insert (&optional beg end)
   "Send region or buffer to promptivd.
 
-When region is active, send text between BEG and END; otherwise send the entire buffer.
-Respects user options including fencing, path line, server URL, and timeout."
+When region is active, send text between BEG and END; otherwise send the
+entire buffer.  Respects user options including fencing, path line, server
+URL, and timeout."
   (interactive (list (when (use-region-p) (region-beginning))
                      (when (use-region-p) (region-end))))
   (let* ((raw (if (and beg end)
@@ -226,11 +234,28 @@ Respects user options including fencing, path line, server URL, and timeout."
          (loc
           (when promptivel-include-file-path-p
             (cond
-             (buffer-file-name buffer-file-name)
+             (buffer-file-name (promptivel--get-file-path))
              (t (buffer-name))))))
     (if loc
         (format "In %s:\n%s" loc fenced)
       fenced)))
+
+(defun promptivel--get-file-path ()
+  "Return the file path for the current buffer according to user preferences.
+Returns absolute path by default, or relative path from project root
+when `promptivel-use-relative-path-p' is non-nil."
+  (if (and promptivel-use-relative-path-p buffer-file-name)
+      (let ((project-root (promptivel--get-project-root)))
+        (if project-root
+            (file-relative-name buffer-file-name project-root)
+          ;; or should we return buffer-file-name instead?
+          (buffer-name)))
+    buffer-file-name))
+
+(defun promptivel--get-project-root ()
+  "Return the project root directory or nil if not in a project."
+  (when-let ((project (project-current)))
+    (project-root project)))
 
 (defun promptivel--placement-type-string (placement)
   "Return PLACEMENT as a JSON-ready string or nil."
