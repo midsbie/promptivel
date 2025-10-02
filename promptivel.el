@@ -159,9 +159,8 @@ Bindings (global when mode is enabled):
 PLACEMENT is one of the symbols `top', `bottom', or `cursor'."
   (interactive
    (list (pcase (completing-read
-                 "Placement: "
-                 '("cursor" "top" "bottom") nil t
-                 (symbol-name promptivel-placement))
+                 (format "Placement [%s]: " promptivel-placement)
+                 '("cursor" "top" "bottom") nil t nil)
            ("top" 'top)
            ("bottom" 'bottom)
            (_ 'cursor))))
@@ -173,7 +172,8 @@ PLACEMENT is one of the symbols `top', `bottom', or `cursor'."
   "Set `promptivel-session-policy' interactively to POLICY."
   (interactive
    (let* ((choice (completing-read
-                   "Session policy: "
+                   (format "Session policy [%s]: "
+                           (promptivel--policy->label promptivel-session-policy))
                    (mapcar #'car promptivel--session-policy-alist)
                    nil t nil)))
      (list (promptivel--label->policy choice))))
@@ -188,7 +188,9 @@ PROVIDER is a string matching one of the available providers from the sink."
   (interactive
    (list (let ((providers (promptivel--get-providers)))
            (if providers
-               (completing-read "Provider: " providers nil t promptivel-selected-provider)
+               (completing-read
+                (format "Provider [%s]: " promptivel-selected-provider)
+                providers nil t nil)
              (user-error "No providers available - is the sink connected?")))))
   (setq promptivel-selected-provider provider)
   (message "promptivel provider: %s" provider))
