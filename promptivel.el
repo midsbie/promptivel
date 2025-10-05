@@ -129,6 +129,7 @@ When nil, user will be prompted to select from available providers."
     (define-key map (kbd "s") #'promptivel-select-session-policy)
     (define-key map (kbd "p") #'promptivel-select-provider)
     (define-key map (kbd "i") #'promptivel-insert)
+    (define-key map (kbd "y") #'promptivel-yank)
     map)
   "Prefix keymap for Promptivel commands.")
 
@@ -204,26 +205,46 @@ entire buffer.  Respects user options including fencing, path line, server
 URL, and timeout."
   (interactive (list (when (use-region-p) (region-beginning))
                      (when (use-region-p) (region-end))))
+  (let* ((text (promptivel--get-snippet-text beg end))
+         (_provider (promptivel--ensure-provider))
+         (snippet (promptivel--format-snippet text))
+         (url (promptivel--build-url "/v1/insert"))
+         (payload (promptivel--build-payload snippet))
+         (resp (promptivel--http-post-json url payload)))
+    (pcase resp
+      (`(,code . ,body-str)
+       (if (and (integerp code) (<= 200 code) (< code 300))
+           (message "promptivel sent: %d bytes, placement=%s, status=%s"
+                    (string-bytes snippet) promptivel-placement code)
+         (error "promptivel failed: HTTP %s, body: %s" code body-str))))))
+
+;;;###autoload
+(defun promptivel-yank (&optional beg end)
+  "Normalize region or buffer to a prompt snippet and push it to the kill ring.
+
+When region is active, use BEG..END; otherwise use the entire buffer.
+Respects user options (fencing, path line, trimming).  Signals `user-error`
+on empty snippet."
+  (interactive (list (when (use-region-p) (region-beginning))
+                     (when (use-region-p) (region-end))))
+  (let* ((text (promptivel--get-snippet-text beg end))
+         (snippet (promptivel--format-snippet text)))
+    (kill-new snippet)
+    (when (fboundp 'gui-set-selection)
+      (gui-set-selection 'CLIPBOARD snippet))
+    (message "promptivel yanked: %d bytes" (string-bytes snippet))))
+
+(defun promptivel--get-snippet-text (beg end)
+  "Return region or buffer text normalized per user options.
+Trim whitespace if `promptivel-trim-whitespace-p` is non-nil.
+Signal `user-error` if result is empty."
   (let* ((raw (if (and beg end)
                   (buffer-substring-no-properties beg end)
-                (buffer-substring-no-properties (point-min) (point-max)))))
-    (when (and (not promptivel-trim-whitespace-p)
-               (= (length raw) 0))
+                (buffer-substring-no-properties (point-min) (point-max))))
+         (text (if promptivel-trim-whitespace-p (string-trim raw) raw)))
+    (when (string-empty-p text)
       (user-error "Empty snippet"))
-    (let* ((text (if promptivel-trim-whitespace-p (string-trim raw) raw))
-           (_check (when (string-empty-p text)
-                     (user-error "Empty snippet")))
-           (_provider (promptivel--ensure-provider))
-           (snippet (promptivel--format-snippet text))
-           (url (promptivel--build-url "/v1/insert"))
-           (payload (promptivel--build-payload snippet))
-           (resp (promptivel--http-post-json url payload)))
-      (pcase resp
-        (`(,code . ,body-str)
-         (if (and (integerp code) (<= 200 code) (< code 300))
-             (message "promptivel sent: %d bytes, placement=%s, status=%s"
-                      (string-bytes snippet) promptivel-placement code)
-           (error "promptivel failed: HTTP %s, body: %s" code body-str)))))))
+    text))
 
 (defun promptivel--format-snippet (text)
   "Return TEXT transformed per user config."
