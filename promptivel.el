@@ -129,7 +129,7 @@ When nil, user will be prompted to select from available providers."
     (define-key map (kbd "s") #'promptivel-select-session-policy)
     (define-key map (kbd "p") #'promptivel-select-provider)
     (define-key map (kbd "i") #'promptivel-insert)
-    (define-key map (kbd "y") #'promptivel-yank)
+    (define-key map (kbd "w") #'promptivel-kill-ring-save)
     map)
   "Prefix keymap for Promptivel commands.")
 
@@ -219,7 +219,7 @@ URL, and timeout."
          (error "promptivel failed: HTTP %s, body: %s" code body-str))))))
 
 ;;;###autoload
-(defun promptivel-yank (&optional beg end)
+(defun promptivel-kill-ring-save (&optional beg end)
   "Normalize region or buffer to a prompt snippet and push it to the kill ring.
 
 When region is active, use BEG..END; otherwise use the entire buffer.
@@ -232,7 +232,7 @@ on empty snippet."
     (kill-new snippet)
     (when (fboundp 'gui-set-selection)
       (gui-set-selection 'CLIPBOARD snippet))
-    (message "promptivel yanked: %d bytes" (string-bytes snippet))))
+    (message "promptivel saved to kill ring: %d bytes" (string-bytes snippet))))
 
 (defun promptivel--get-snippet-text (beg end)
   "Return region or buffer text normalized per user options.
