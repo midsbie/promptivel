@@ -128,7 +128,8 @@ When nil, user will be prompted to select from available providers."
     (define-key map (kbd "l") #'promptivel-select-placement)
     (define-key map (kbd "s") #'promptivel-select-session-policy)
     (define-key map (kbd "p") #'promptivel-select-provider)
-    (define-key map (kbd "i") #'promptivel-insert)
+    (define-key map (kbd "i") #'promptivel-insert-formatted)
+    (define-key map (kbd "u") #'promptivel-insert-unformatted)
     (define-key map (kbd "w") #'promptivel-kill-ring-save)
     map)
   "Prefix keymap for Promptivel commands.")
@@ -147,7 +148,8 @@ Bindings (global when mode is enabled):
   C-c t l  Select insertion placement
   C-c t s  Select session policy
   C-c t p  Select provider
-  C-c t i  Send region or buffer to promptivd"
+  C-c t i  Send region or buffer to promptivd
+  C-c t r  Send raw region or buffer to promptivd"
   :init-value nil
   :lighter " Promptivel"
   :keymap promptivel-mode-map
@@ -197,7 +199,7 @@ PROVIDER is a string matching one of the available providers from the sink."
   (message "promptivel provider: %s" provider))
 
 ;;;###autoload
-(defun promptivel-insert (&optional beg end)
+(defun promptivel-insert-formatted (&optional beg end)
   "Send region or buffer to promptivd.
 
 When region is active, send text between BEG and END; otherwise send the
@@ -206,16 +208,31 @@ URL, and timeout."
   (interactive (list (when (use-region-p) (region-beginning))
                      (when (use-region-p) (region-end))))
   (let* ((text (promptivel--get-snippet-text beg end))
-         (_provider (promptivel--ensure-provider))
-         (snippet (promptivel--format-snippet text))
+         (snippet (promptivel--format-snippet text)))
+    (promptivel--send-text snippet)))
+
+;;;###autoload
+(defun promptivel-insert-unformatted (&optional beg end)
+  "Send region or buffer to promptivd without formatting.
+
+Behaves like `promptivel-insert-formatted' but does not wrap the text in
+fences or prepend the file path."
+  (interactive (list (when (use-region-p) (region-beginning))
+                     (when (use-region-p) (region-end))))
+  (let ((text (promptivel--get-snippet-text beg end)))
+    (promptivel--send-text text)))
+
+(defun promptivel--send-text (text)
+  "Send TEXT to promptivd."
+  (let* ((_provider (promptivel--ensure-provider))
          (url (promptivel--build-url "/v1/insert"))
-         (payload (promptivel--build-payload snippet))
+         (payload (promptivel--build-payload text))
          (resp (promptivel--http-post-json url payload)))
     (pcase resp
       (`(,code . ,body-str)
        (if (and (integerp code) (<= 200 code) (< code 300))
            (message "promptivel sent: %d bytes, placement=%s, status=%s"
-                    (string-bytes snippet) promptivel-placement code)
+                    (string-bytes text) promptivel-placement code)
          (error "promptivel failed: HTTP %s, body: %s" code body-str))))))
 
 ;;;###autoload
