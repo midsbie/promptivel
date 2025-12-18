@@ -2,3 +2,6 @@
 *~
 .#*
 \#*#
+
+*-autoloads.el
+*-pkg.el
