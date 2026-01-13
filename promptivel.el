@@ -237,18 +237,18 @@ fences or prepend the file path."
 
 ;;;###autoload
 (defun promptivel-kill-ring-save (&optional beg end)
-  "Normalize region or buffer to a prompt snippet and push it to the kill ring.
+  "Save region or buffer to the kill ring with path prefix but no fence.
 
 When region is active, use BEG..END; otherwise use the entire buffer.
-Respects user options (fencing, path line, trimming).  Signals `user-error`
-on empty snippet."
+Clears the selection after saving, like `kill-ring-save'."
   (interactive (list (when (use-region-p) (region-beginning))
                      (when (use-region-p) (region-end))))
   (let* ((text (promptivel--get-snippet-text beg end))
-         (snippet (promptivel--format-snippet text)))
+         (snippet (promptivel--add-path-prefix text)))
     (kill-new snippet)
     (when (fboundp 'gui-set-selection)
       (gui-set-selection 'CLIPBOARD snippet))
+    (deactivate-mark)
     (message "promptivel saved to kill ring: %d bytes" (string-bytes snippet))))
 
 (defun promptivel--get-snippet-text (beg end)
@@ -263,22 +263,23 @@ Signal `user-error` if result is empty."
       (user-error "Empty snippet"))
     text))
 
+(defun promptivel--add-path-prefix (text)
+  "Prepend file path to TEXT if `promptivel-include-file-path-p'."
+  (let ((loc (when promptivel-include-file-path-p
+               (cond
+                (buffer-file-name (promptivel--get-file-path))
+                (t (buffer-name))))))
+    (if loc (format "In %s:\n%s" loc text) text)))
+
 (defun promptivel--format-snippet (text)
   "Return TEXT transformed per user config."
-  (let* ((fenced (if promptivel-fence-enabled-p
-                     (format "%s\n%s\n%s"
-                             promptivel-fence-begin-string
-                             text
-                             promptivel-fence-end-string)
-                   text))
-         (loc
-          (when promptivel-include-file-path-p
-            (cond
-             (buffer-file-name (promptivel--get-file-path))
-             (t (buffer-name))))))
-    (if loc
-        (format "In %s:\n%s" loc fenced)
-      fenced)))
+  (let ((fenced (if promptivel-fence-enabled-p
+                    (format "%s\n%s\n%s"
+                            promptivel-fence-begin-string
+                            text
+                            promptivel-fence-end-string)
+                  text)))
+    (promptivel--add-path-prefix fenced)))
 
 (defun promptivel--get-file-path ()
   "Return the file path for the current buffer according to user preferences.
