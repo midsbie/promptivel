@@ -78,7 +78,7 @@ If no project root can be determined, falls back to buffer name."
   "Fence opener used when `promptivel-fence-enabled-p' is non-nil."
   :type 'string)
 
-(defcustom promptivel-fence-end-string "```\n---"
+(defcustom promptivel-fence-end-string "```"
   "Fence closer used when `promptivel-fence-enabled-p' is non-nil."
   :type 'string)
 
@@ -237,14 +237,16 @@ fences or prepend the file path."
 
 ;;;###autoload
 (defun promptivel-kill-ring-save (&optional beg end)
-  "Save region or buffer to the kill ring with path prefix but no fence.
+  "Save region or buffer to the kill ring with formatting.
 
 When region is active, use BEG..END; otherwise use the entire buffer.
+Applies the same formatting as `promptivel-insert-formatted', including
+fencing when `promptivel-fence-enabled-p' is non-nil.
 Clears the selection after saving, like `kill-ring-save'."
   (interactive (list (when (use-region-p) (region-beginning))
                      (when (use-region-p) (region-end))))
   (let* ((text (promptivel--get-snippet-text beg end))
-         (snippet (promptivel--add-path-prefix text)))
+         (snippet (promptivel--format-snippet text)))
     (kill-new snippet)
     (when (fboundp 'gui-set-selection)
       (gui-set-selection 'CLIPBOARD snippet))
