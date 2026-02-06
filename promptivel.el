@@ -82,6 +82,11 @@ If no project root can be determined, falls back to buffer name."
   "Fence closer used when `promptivel-fence-enabled-p' is non-nil."
   :type 'string)
 
+(defcustom promptivel-path-prefix "In file @"
+  "Prefix for the file path line when `promptivel-include-file-path-p' is
+non-nil."
+  :type 'string)
+
 (defcustom promptivel-trim-whitespace-p nil
   "When non-nil, trim leading/trailing whitespace from the snippet before sending.
 Default is nil to avoid mutating user content."
@@ -271,7 +276,7 @@ Signal `user-error` if result is empty."
                (cond
                 (buffer-file-name (promptivel--get-file-path))
                 (t (buffer-name))))))
-    (if loc (format "In %s:\n%s" loc text) text)))
+    (if loc (format "%s%s:\n%s" promptivel-path-prefix loc text) text)))
 
 (defun promptivel--format-snippet (text)
   "Return TEXT transformed per user config."
